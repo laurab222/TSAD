@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from math import sqrt
+from math import sqrt, pi
 from utils.masking import TriangularCausalMask, ProbMask
 from reformer_pytorch import LSHSelfAttention
 from einops import rearrange
@@ -275,6 +275,7 @@ class AttentionLayer(nn.Module):
         self.query_projection = nn.Linear(d_model, d_keys * n_heads)
         self.key_projection = nn.Linear(d_model, d_keys * n_heads)
         self.value_projection = nn.Linear(d_model, d_values * n_heads)
+        self.sigma_projection = nn.Linear(d_model, n_heads)  # needed for AnomalyTransformer
         self.out_projection = nn.Linear(d_values * n_heads, d_model)
         self.n_heads = n_heads
 
@@ -282,22 +283,37 @@ class AttentionLayer(nn.Module):
         B, L, _ = queries.shape
         _, S, _ = keys.shape
         H = self.n_heads
+        x = queries
 
         queries = self.query_projection(queries).view(B, L, H, -1)
         keys = self.key_projection(keys).view(B, S, H, -1)
         values = self.value_projection(values).view(B, S, H, -1)
+        sigma = self.sigma_projection(x).view(B, L, H)
 
-        out, attn = self.inner_attention(
+        if self.inner_attention.output_attention:
+            out, attn, prior, sigma_out = self.inner_attention(
             queries,
             keys,
             values,
-            attn_mask,
+            sigma=sigma,
+            attn_mask=attn_mask,
             tau=tau,
             delta=delta
-        )
-        out = out.view(B, L, -1)
-
-        return self.out_projection(out), attn
+            )
+            out = out.view(B, L, -1)
+            return self.out_projection(out), attn, prior, sigma_out
+        else:
+            out, attn = self.inner_attention(
+            queries,
+            keys,
+            values,
+            sigma=sigma,
+            attn_mask=attn_mask,
+            tau=tau,
+            delta=delta
+            )
+            out = out.view(B, L, -1)
+            return self.out_projection(out), attn
 
 
 class ReformerLayer(nn.Module):
@@ -323,9 +339,52 @@ class ReformerLayer(nn.Module):
             fill_len = (self.bucket_size * 2) - (N % (self.bucket_size * 2))
             return torch.cat([queries, torch.zeros([B, fill_len, C]).to(queries.device)], dim=1)
 
-    def forward(self, queries, keys, values, attn_mask, tau, delta):
+    def forward(self, queries, keys, values, attn_mask, tau, delta, sigma):
         # in Reformer: defalut queries=keys
         B, N, C = queries.shape
         queries = self.attn(self.fit_length(queries))[:, :N, :]
         return queries, None
 
+
+
+# from AnomalyTransformer (ICLR 2022)
+class AnomalyAttention(nn.Module):
+    def __init__(self, win_size, mask_flag=True, scale=None, attention_dropout=0.0, output_attention=False):
+        super(AnomalyAttention, self).__init__()
+        self.scale = scale
+        self.mask_flag = mask_flag
+        self.output_attention = output_attention
+        self.dropout = nn.Dropout(attention_dropout)
+        window_size = win_size
+        self.distances = torch.zeros((window_size, window_size))
+        for i in range(window_size):
+            for j in range(window_size):
+                self.distances[i][j] = abs(i - j)
+
+    def forward(self, queries, keys, values, sigma, attn_mask, tau=None, delta=None):
+        B, L, H, E = queries.shape
+        _, S, _, D = values.shape
+        scale = self.scale or 1. / sqrt(E)
+
+        scores = torch.einsum("blhe,bshe->bhls", queries, keys)
+        if self.mask_flag:
+            if attn_mask is None:
+                attn_mask = TriangularCausalMask(B, L, device=queries.device)
+            scores.masked_fill_(attn_mask.mask, -np.inf)
+        attn = scale * scores
+
+        sigma = sigma.transpose(1, 2)  # B L H ->  B H L
+        window_size = attn.shape[-1]
+        sigma = torch.sigmoid(sigma * 5) + 1e-5
+        sigma = torch.pow(3, sigma) - 1
+        sigma = sigma.unsqueeze(-1).repeat(1, 1, 1, window_size)  # B H L L
+        prior = self.distances.unsqueeze(0).unsqueeze(0).repeat(sigma.shape[0], sigma.shape[1], 1, 1)
+        prior = 1.0 / (sqrt(2 * pi) * sigma) * torch.exp(-prior ** 2 / 2 / (sigma ** 2))
+
+        series = self.dropout(torch.softmax(attn, dim=-1))
+        V = torch.einsum("bhls,bshd->blhd", series, values)
+
+        if self.output_attention:
+            return (V.contiguous(), series, prior, sigma)
+        else:
+            return (V.contiguous(), None)

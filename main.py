@@ -13,7 +13,7 @@ from tslearn.metrics import SoftDTWLossPyTorch
 from src.parse_args import parse_arguments
 from src.pot import pot_eval
 from src.plotting import plot_accuracies, plot_labels, plot_losses, plot_metrics, plotter, plotter2, compare_labels, plot_MSE_vs_ascore
-from src.utils import load_model, save_model, local_anomaly_labels, local_pot, color, EarlyStopper
+from src.utils import load_model, save_model, local_anomaly_labels, local_pot, color, EarlyStopper, my_kl_loss, adjust_learning_rate
 from src.diagnosis import hit_att, ndcg
 from src.data_loader import MyDataset
 from src.soft_dtw_cuda import SoftDTW
@@ -126,7 +126,7 @@ def backprop(epoch, model, data, feats, optimizer, scheduler, training=True,
 				return loss.detach().numpy(), z_all.detach().numpy()
 			else:
 				return loss.detach().numpy()
-	elif 'iTransformer' in model.name or 'Transformer' in model.name:
+	elif model.name in ['Transformer', 'iTransformer']:
 		if lossname == 'MSE':
 			l = nn.MSELoss(reduction = 'none')
 		elif lossname == 'Huber':
@@ -193,6 +193,82 @@ def backprop(epoch, model, data, feats, optimizer, scheduler, training=True,
 				return loss.detach().numpy(), z_all.detach().numpy()  
 			else:
 				return loss.detach().numpy()
+	elif 'AnomalyTransformer' in model.name:
+		l = nn.MSELoss(reduction='mean')
+		param_k = 3 # hyperparameter for AnomalyTransformer
+		n = epoch + 1
+		loss1_list = []
+		iter_count = 0
+		if training:
+			for d in data:
+				iter_count += 1
+				output, series, prior, _ = model(d)
+                # calculate Association discrepancy
+				series_loss = 0.0
+				prior_loss = 0.0
+				for u in range(len(prior)):
+					series_loss += (torch.mean(my_kl_loss(series[u], (
+                            prior[u] / torch.unsqueeze(torch.sum(prior[u], dim=-1), dim=-1).repeat(1, 1, 1, model.window_size)).detach())) + torch.mean(
+                        		my_kl_loss((prior[u] / torch.unsqueeze(torch.sum(prior[u], dim=-1), dim=-1).repeat(1, 1, 1, model.window_size)).detach(), series[u])))
+					prior_loss += (torch.mean(my_kl_loss(
+                        	(prior[u] / torch.unsqueeze(torch.sum(prior[u], dim=-1), dim=-1).repeat(1, 1, 1, model.window_size)), series[u].detach())) 
+							+ torch.mean(my_kl_loss(series[u].detach(), (prior[u] / torch.unsqueeze(torch.sum(prior[u], dim=-1), dim=-1).repeat(1, 1, 1, model.window_size)))))
+				series_loss = series_loss / len(prior)
+				prior_loss = prior_loss / len(prior)
+				rec_loss = l(output, d)
+				loss1_list.append((rec_loss - param_k * series_loss).item())
+				loss1 = rec_loss - param_k * series_loss
+				loss2 = rec_loss + param_k * prior_loss
+            # Minimax strategy
+			optimizer.zero_grad()
+			loss1.backward(retain_graph=True)
+			loss2.backward()
+			optimizer.step()
+			# learning rate adjustment for AnomalyTransformer
+			adjust_learning_rate(optimizer, epoch + 1, model.lr)	
+			return np.average(loss1_list), optimizer.param_groups[0]['lr']
+		else:
+			l = nn.MSELoss(reduction='none')
+			z_all = torch.empty(0)
+			loss = torch.empty(0)
+			temperature = 50
+			attens_energy = []
+			for d in data:
+				local_bs = d.shape[0]
+				output, series, prior, _ = model(d)
+				if pred:
+					z_all = torch.cat((z_all, output), dim=0)
+				loss = torch.mean(l(d, output), dim=-1) # averages over features
+				# loss = l(d, output)
+				# loss = loss.view(-1, feats)
+				series_loss = 0.0
+				prior_loss = 0.0
+				for u in range(len(prior)):
+					if u == 0:
+						series_loss = my_kl_loss(series[u], (
+								prior[u] / torch.unsqueeze(torch.sum(prior[u], dim=-1), dim=-1).repeat(1, 1, 1, model.window_size)).detach()) * temperature
+						prior_loss = my_kl_loss(
+							(prior[u] / torch.unsqueeze(torch.sum(prior[u], dim=-1), dim=-1).repeat(1, 1, 1, model.window_size)),
+							series[u].detach()) * temperature
+					else:
+						series_loss += my_kl_loss(series[u], (
+								prior[u] / torch.unsqueeze(torch.sum(prior[u], dim=-1), dim=-1).repeat(1, 1, 1, model.window_size)).detach()) * temperature
+						prior_loss += my_kl_loss(
+							(prior[u] / torch.unsqueeze(torch.sum(prior[u], dim=-1), dim=-1).repeat(1, 1, 1, model.window_size)),
+							series[u].detach()) * temperature
+			
+				metric = torch.softmax((-series_loss - prior_loss), dim=-1)
+				cri = metric * loss
+				cri = cri.detach().numpy()
+				attens_energy.append(cri)
+			
+			attens_energy = np.concatenate(attens_energy, axis=None)
+			test_energy = np.repeat(attens_energy[:, np.newaxis], repeats=feats, axis=1)
+			if pred:
+				z_all = z_all.reshape(-1, feats)
+				return test_energy, z_all.detach().numpy()	
+			else:
+				return test_energy
 	elif 'LSTM_AE' in model.name:
 		l = nn.MSELoss(reduction = 'none')
 		n = epoch + 1
@@ -318,9 +394,11 @@ if __name__ == '__main__':
 			min_lossV = 100
 		num_epochs = args.epochs; e = epoch + 1; start_time = time()
 		for e in tqdm(list(range(epoch+1, epoch+num_epochs+1))):
+			model.train()
 			lossT, lr = backprop(e, model, data_loader_train, feats, optimizer, scheduler, training=True, 
 								lossname=args.loss, enc_feats=enc_feats, forecasting=args.forecasting)
 			if args.k > 0:
+				model.eval()
 				lossV = backprop(e, model, data_loader_valid, feats, optimizer, scheduler, training=False, 
 					 			lossname=args.loss, enc_feats=enc_feats, forecasting=args.forecasting)
 				lossV = np.mean(lossV)
@@ -366,11 +444,11 @@ if __name__ == '__main__':
 	# print(f'check data shapes before removing padding:'
 	#    f'\ntrain loss {lossT.shape}, test loss{loss.shape}, labels {labels.shape}\n')
 
-	if ('iTransformer' in model.name or model.name in ['LSTM_AE', 'Transformer']) and not args.forecasting:
+	if ('iTransformer' in model.name or model.name in ['LSTM_AE', 'Transformer', 'AnomalyTransformer']) and not args.forecasting:
 		# cut out the padding from test data, loss tensors
 		lossT_tmp, loss_tmp, y_pred_tmp = [], [], []
-		# print(test.get_ts_lengths(), np.sum(test.get_ts_lengths()), len(test.get_ts_lengths()))
-		# print(test.get_ideal_lengths(), np.sum(test.get_ideal_lengths()), len(test.get_ideal_lengths()))
+		print(test.get_ts_lengths(), np.sum(test.get_ts_lengths()), len(test.get_ts_lengths()))
+		print(test.get_ideal_lengths(), np.sum(test.get_ideal_lengths()), len(test.get_ideal_lengths()))
 		start = 0
 		for i, l in enumerate(test.get_ts_lengths()):
 			loss_tmp.append(loss[start:start+l])
@@ -465,5 +543,5 @@ if __name__ == '__main__':
 	df_res.to_csv(f'{res_path}/res.csv')	
 
 	# labels predicted for 3 different anomaly label methods
-	df_labels = pd.DataFrame( {'local_or': labelspred, 'local_maj': labelspred_maj, 'global': labelspred_glob} )
+	df_labels = pd.DataFrame( {'local_all': labelspred, 'local_all_maj': labelspred_maj, 'global': labelspred_glob} )
 	df_labels.to_csv(f'{res_path}/pred_labels.csv', index=False)

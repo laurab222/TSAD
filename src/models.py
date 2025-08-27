@@ -7,8 +7,8 @@ from src.dlutils import *
 from src.constants import *
 
 # for iTransformer
-from layers.Transformer_EncDec import Encoder, EncoderLayer
-from layers.SelfAttention_Family import FullAttention, AttentionLayer
+from layers.Transformer_EncDec import Encoder, EncoderLayer, Encoder_AnomalyTransformer, EncoderLayer_AnomalyTransformer
+from layers.SelfAttention_Family import FullAttention, AttentionLayer, AnomalyAttention
 from layers.Embed import DataEmbedding_inverted, DataEmbedding
 
 
@@ -312,3 +312,54 @@ class Transformer(nn.Module):
 		dec_out = self.forecast(src, src_mark_enc)  
 		out = dec_out
 		return out
+	
+
+
+# Anomaly Transformer (ICLR 2022)
+class AnomalyTransformer(nn.Module):
+	def __init__(self, feats, window_size, d_model=2):
+		super(AnomalyTransformer, self).__init__()
+		self.name = 'AnomalyTransformer'
+		self.lr = 0.0001
+		self.batch = 32
+		self.feats = feats
+		self.window_size = window_size
+		self.output_attention = True
+		self.d_model = d_model 
+		self.n_heads = 8
+		self.e_layers = 3
+		self.d_ff = 64
+		self.dropout = 0.0
+		self.activation = 'gelu'
+
+		# Encoding
+		self.embedding = DataEmbedding(self.feats, self.d_model, self.dropout)
+
+		# Encoder
+		self.encoder = Encoder_AnomalyTransformer(
+			[
+				EncoderLayer_AnomalyTransformer(
+					AttentionLayer(
+						AnomalyAttention(self.window_size, False, attention_dropout=self.dropout, 
+										 output_attention=self.output_attention),
+						self.d_model, self.n_heads),
+					self.d_model,
+					self.d_ff,
+					dropout=self.dropout,
+					activation=self.activation
+				) for l in range(self.e_layers)
+			],
+			norm_layer=torch.nn.LayerNorm(self.d_model)
+		)
+
+		self.projection = nn.Linear(self.d_model, self.feats, bias=True)  # should output be in shape of  window size or feats?
+
+	def forward(self, x, x_mark_enc=None):
+		enc_out = self.embedding(x, x_mark_enc)
+		enc_out, series, prior, sigmas = self.encoder(enc_out)
+		enc_out = self.projection(enc_out)
+
+		if self.output_attention:
+			return enc_out, series, prior, sigmas
+		else:
+			return enc_out  # [B, L, D]

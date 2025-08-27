@@ -61,6 +61,8 @@ def load_model(modelname, dataset, dims, window_size, d_model=None,
 		model = model_class(dims, window_size, d_model, forecasting).double()
 	elif modelname == 'Transformer':
 		model = model_class(dims, window_size, d_model).double()
+	elif modelname == 'AnomalyTransformer':
+		model = model_class(dims, window_size, d_model).double()
 	else:
 		model = model_class(dims, window_size).double()
 	optimizer = torch.optim.AdamW(model.parameters() , lr=model.lr, weight_decay=1e-5)
@@ -185,3 +187,16 @@ def local_anomaly_labels(preds, labels, q=1e-5, plot_path=None, nb_adim=1):
 	print(f'{color.HEADER}Local results with {nb_adim} anomalous dimensions for anomaly{color.ENDC}')
 	pprint(result_local1)
 	return labelspred, result_local1
+
+# loss and lr adjustment used for AnomalyTransformer
+def my_kl_loss(p, q):
+    res = p * (torch.log(p + 0.0001) - torch.log(q + 0.0001))
+    return torch.mean(torch.sum(res, dim=-1), dim=1)
+
+def adjust_learning_rate(optimizer, epoch, lr_):
+    lr_adjust = {epoch: lr_ * (0.5 ** ((epoch - 1) // 1))}
+    if epoch in lr_adjust.keys():
+        lr = lr_adjust[epoch]
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = lr
+        print('Updating learning rate to {}'.format(lr))

@@ -21,7 +21,20 @@ lm_d = {
         'GECCO_normal':  [(0.9995, 1.04), (0.99995, 1.06)],
         'creditcard': [(0.9995, 1.04), (0.99995, 1.06)],
         'creditcard_normal': [(0.9995, 1.04), (0.99995, 1.06)],
-	}
+        'lorenzetti_wa5_minmax': [(0.997, 1.003), (0.997, 1.003)],              # anom rate ~ 0.3%
+        'lorenzetti_wa10_minmax': [(0.997, 1.003), (0.997, 1.003)],
+        'lorenzetti_wa20_minmax': [(0.997, 1.003), (0.997, 1.003)],
+        'lorenzetti_wp40_wa5_minmax':  [(0.997, 1.003), (0.997, 1.003)],        # anom rate ~ 0.3%
+        'lorenzetti_wp40_wa10_minmax': [(0.997, 1.003), (0.997, 1.003)],
+        'lorenzetti_wp40_wa20_minmax': [(0.997, 1.003), (0.997, 1.003)],    
+        'lorenzetti_wa20_new_minmax': [(0.78, 1.22), (0.78, 1.22)],             # anom rate ~ 22% 
+        'lorenzetti_wp40_wa20_new_minmax':  [(0.78, 1.22), (0.78, 1.22)],
+        'lorenzetti_wa20_new2_minmax': [(0.99, 1.01), (0.99, 1.01)],            # anom rate ~ 1%
+        'lorenzetti_wa50_new2_minmax': [(0.99, 1.01), (0.99, 1.01)], 
+        'lorenzetti_wp40_wa20_new2_minmax': [(0.99, 1.01), (0.99, 1.01)],      
+        'lorenzetti_wp40_wa50_new2_minmax': [(0.99, 1.01), (0.99, 1.01)],    
+        'lorenzetti_deadcells': [(0.71, 1.29), (0.71, 1.29)],                   # anom rate ~ 29%
+}    
 lm = lm_d[args.dataset][1 if 'TranAD' in args.model else 0]
 
 # Hyperparameters for TranAD
@@ -44,6 +57,27 @@ lr_d = {
         'GECCO_normal': 0.0001,
         'creditcard': 0.0001,
         'creditcard_normal': 0.0001,
+        'lorenzetti_wa5': 0.0001,
+        'lorenzetti_wa10': 0.0001,
+        'lorenzetti_wa20': 0.0001,
+        'lorenzetti_wa20_new': 0.0001,
+        'lorenzetti_wp40_wa5': 0.0001,
+        'lorenzetti_wp40_wa10': 0.0001,
+        'lorenzetti_wp40_wa20': 0.0001,
+        'lorenzetti_wp40_wa20_new': 0.0001,
+        'lorenzetti_wa5_minmax': 0.0001,
+        'lorenzetti_wa10_minmax': 0.0001,
+        'lorenzetti_wa20_minmax': 0.0001,
+        'lorenzetti_wa20_new_minmax': 0.0001,
+        'lorenzetti_wa20_new2_minmax': 0.0001,
+        'lorenzetti_wa50_new2_minmax': 0.0001,
+        'lorenzetti_wp40_wa5_minmax': 0.0001,
+        'lorenzetti_wp40_wa10_minmax': 0.0001,
+        'lorenzetti_wp40_wa20_minmax': 0.0001,
+        'lorenzetti_wp40_wa20_new_minmax': 0.0001,
+        'lorenzetti_wp40_wa20_new2_minmax': 0.0001,
+        'lorenzetti_wp40_wa50_new2_minmax': 0.0001,
+        'lorenzetti_deadcells': 0.0001,
 	}
 lr = lr_d[args.dataset]
 
@@ -69,6 +103,27 @@ percentiles = {
         'GECCO_normal': (98, 2000),
         'creditcard': (99, 2000),
         'creditcard_normal': (99, 2000),
+        'lorenzetti_wa5': (99, 2000),
+        'lorenzetti_wa10': (99, 2000),  
+        'lorenzetti_wa20': (99, 2000),
+        'lorenzetti_wa20_new': (99, 2000),
+        'lorenzetti_wp40_wa5': (99, 2000),
+        'lorenzetti_wp40_wa10': (99, 2000),
+        'lorenzetti_wp40_wa20': (99, 2000),
+        'lorenzetti_wp40_wa20_new': (99, 2000),
+        'lorenzetti_wa5_minmax': (99, 2000),
+        'lorenzetti_wa10_minmax': (99, 2000),
+        'lorenzetti_wa20_minmax': (99, 2000),
+        'lorenzetti_wa20_new_minmax': (99, 2000),
+        'lorenzetti_wa20_new2_minmax': (99, 2000),
+        'lorenzetti_wa50_new2_minmax': (99, 2000),
+        'lorenzetti_wp40_wa5_minmax': (99, 2000),
+        'lorenzetti_wp40_wa10_minmax': (99, 2000),
+        'lorenzetti_wp40_wa20_minmax': (99, 2000),
+        'lorenzetti_wp40_wa20_new_minmax': (99, 2000),
+        'lorenzetti_wp40_wa20_new2_minmax': (99, 2000),
+        'lorenzetti_wp40_wa50_new2_minmax': (99, 2000),
+        'lorenzetti_deadcells': (99, 2000),
 	}
 cvp = percentiles[args.dataset][1]
 debug = 9

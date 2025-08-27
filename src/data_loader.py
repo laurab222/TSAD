@@ -161,7 +161,7 @@ class MyDataset(Dataset):
 
         if type == 'test':
             # 'ATLAS_DQM_TS': 'cosmicCalo_',  # 'hardProbes_', 'hvononNominal_', 'pumpNoise_'
-            run = 'pumpNoise_'
+            run = 'hardProbes_'
             file = run + file
             labelfile = run + labelfile
 
@@ -207,7 +207,7 @@ class MyDataset(Dataset):
         """
 
         ideal_lengths = []
-        if ('iTransformer' in self.modelname or self.modelname in ['LSTM_AE', 'Transformer']) and not self.forecasting: 
+        if ('iTransformer' in self.modelname or self.modelname in ['LSTM_AE', 'Transformer', 'AnomalyTransformer']) and not self.forecasting: 
             windows = np.empty((0, self.window_size, data.shape[1]))
             start = 0
             for l in self.ts_lengths:
@@ -232,10 +232,10 @@ class MyDataset(Dataset):
             for i, g in enumerate(data): 
                 if i >= self.window_size: w = data[i-self.window_size:i]
                 else: w = np.concatenate([data[:1].repeat(self.window_size-i, 0), data[0:i]])
-                windows.append(w if self.modelname in ['TranAD', 'iTransformer', 'Transformer', 'LSTM_AE'] else w.reshape(-1))
+                windows.append(w if self.modelname in ['TranAD', 'iTransformer', 'Transformer', 'AnomalyTransformer', 'LSTM_AE'] else w.reshape(-1))
             windows = np.stack(windows)
             self.data = windows
-            if self.modelname not in ['TranAD','iTransformer', 'Transformer', 'LSTM_AE', 'None', 'USAD']:
+            if self.modelname not in ['TranAD','iTransformer', 'Transformer', 'LSTM_AE', 'None', 'USAD', 'AnomalyTransformer']:
                 self.feats = windows.shape[1]
 
     def __len__(self):

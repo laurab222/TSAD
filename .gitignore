@@ -155,6 +155,7 @@ DAGMM*/*
 IF*/*
 None*/*
 Transformer/*
+AnomalyTransformer*/*
 *ATLAS_TS*/*
 *.csv
 data/*

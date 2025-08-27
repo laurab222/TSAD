@@ -20,8 +20,12 @@ features_dict = {
 					 r'EMBC $\hat{\tau}$, mean',  r'EMBC $\hat{\tau}$, std', r'EMECA $\hat{Q}$, mean', r'EMECA $\hat{Q}$, std', r'EMECA $\hat{\tau}$, mean', r'EMECA $\hat{\tau}$, std',
 					 r'EMECC $\hat{Q}$, mean', r'EMECC $\hat{Q}$, std', r'EMECC $\hat{\tau}$, mean', r'EMECC $\hat{\tau}$, std'],
 	'GECCO': 		['Tp', 'Cl', 'pH', 'Redox', 'Leit', 'Trueb', 'Cl_2', 'Fm', 'Fm_2'],
+	'lorenzetti': 	[r'Cluster $E$ mean', r'Cluster $E$ std', r'Cluster $E_T$ mean', r'Cluster $E_T$ std',
+                     r'Cluster $\eta$ mean', r'Cluster $\eta$ std', r'Cluster $\phi$ mean', r'Cluster $\phi$ std',
+					r'$r_\eta$ mean', r'$r_\eta$ std', r'$r_\phi$ mean', r'$r_\phi$ std', r'$r_{had}$ mean', r'$r_{had}$ std',
+					r'$E_{ratio}$ mean', r'$E_{ratio}$ std', r'$W_{\eta 2}$ mean', r'$W_{\eta 2}$ std'],
 }
-
+	
 
 def add_atlas(ax, lines, status='Internal'):
     """ add_atlas - Adds the atlas label to an axis and follows
@@ -46,6 +50,25 @@ def add_atlas(ax, lines, status='Internal'):
     for i, ln in enumerate(lines):
         vertical = top - i * spacing
         ax.text(left_edge, vertical, ln, transform=ax.transAxes, ha='left', va='top', fontsize=17)
+
+def LZTLabel(ax, x, y, text, color='black', fontsize=15):
+    """
+    Mimics the ROOT LZTLabel using matplotlib.
+    Draws 'Lorenzetti' followed by some custom text at a given NDC position.
+    """
+    lorenzetti_fontsize = fontsize
+    text_fontsize = fontsize * 0.8
+    
+    # Draw 'Lorenzetti' label (bold + italics/serif if mimicking ROOT 72)
+    ax.text(x, y, "Lorenzetti", transform=ax.transAxes,
+                fontsize=lorenzetti_fontsize, fontweight='bold', fontstyle='italic', color=color,
+                verticalalignment='top', horizontalalignment='left')
+
+    # Estimate width of 'Lorenzetti' to offset the next part (rough match)
+    delx = 0.1  # tweak as needed based on figure size and font
+    ax.text(x + delx, y, text, transform=ax.transAxes,
+            fontsize=text_fontsize, color=color,
+            verticalalignment='top', horizontalalignment='left')
 
 def plot_accuracies(accuracy_list, folder):
 	os.makedirs(folder, exist_ok=True)
@@ -80,7 +103,7 @@ def plot_losses(accuracy_list, folder):
 	# plt.xticks(epochs)
 	plt.xlabel('Epochs')
 	plt.ylabel('Average Loss')
-	plt.ylim(bottom=0)
+	# plt.ylim(bottom=0)
 	# plt.yscale('log')
 
 	plt.legend()
@@ -158,23 +181,27 @@ def plotter2(path, x_true, x_pred, ascore, dataset, y_pred=None, y=None, name=''
 	os.makedirs(path, exist_ok=True)
 	if dataset in features_dict.keys():
 		features = features_dict[dataset]
+	elif 'lorenzetti' in dataset:
+		features = features_dict['lorenzetti']
 	else:
 		features = [f'Dim {i}' for i in range(x_true.shape[1])]
 	plot_dims = min(len(features), 30)  # because we limit plot at 30 features
 	dims = min(len(features) + 1, 31)  # because we plot ascore in the second last dimension
 	if y is not None and y_pred is not None:
 		dims += 2
-	size = int(dims * 1.3)
+	size = int(dims * 1.5)
 	x25, x75 = None, None
 	if isinstance(x_pred, list):
 		x_pred, x25, x75 = x_pred
 
-	fig, axs = plt.subplots(dims, 1, figsize=(17, size), sharex=True, constrained_layout=True)
+	fig, axs = plt.subplots(dims, 1, figsize=(28, size), sharex=True, constrained_layout=True)
 	if 'ATLAS' in dataset:
 		# add_atlas(axs[0], ['Data September 2018, 'r'$\sqrt{s_{NN}}= 13$'' TeV', 'CosmicCalo stream'])  
-		# add_atlas(axs[0], ['Data October 2023, 'r'$\sqrt{s_{NN}}= 5.36$'' TeV', 'HardProbes stream'])  
+		add_atlas(axs[0], ['Data October 2023, 'r'$\sqrt{s_{NN}}= 5.36$'' TeV', 'HardProbes stream'])  
 		# add_atlas(axs[0], ['Data August 2022, 'r'$\sqrt{s_{NN}}= 13.6$'' TeV', 'Main stream'])  # hvononNominal
-		add_atlas(axs[0], ['Data May 2023, 'r'$\sqrt{s_{NN}}= 13.6$'' TeV', 'Main stream'])  # pumpNoise
+		# add_atlas(axs[0], ['Data May 2023, 'r'$\sqrt{s_{NN}}= 13.6$'' TeV', 'Main stream'])  # pumpNoise
+	elif 'lorenzetti' in dataset:
+		LZTLabel(axs[0], 0.015, 0.93, r"$\sqrt{s}=13$ TeV", color='black', fontsize=30)		
 	for dim in range(plot_dims):  # iterate through the features we're using
 		axs[dim].plot(x_true[:, dim], label='True')
 		axs[dim].plot(x_pred[:, dim], '--', label='Predicted')
@@ -201,7 +228,7 @@ def plotter2(path, x_true, x_pred, ascore, dataset, y_pred=None, y=None, name=''
 		axs[-1].set_ylabel('Anomaly score', rotation=0, ha='right', rotation_mode='default', labelpad=5)
 		axs[-1].yaxis.set_label_coords(-0.1, 0.5)
 
-	if 'ATLAS' in dataset:
+	if 'ATLAS' in dataset or 'lorenzetti' in dataset:
 		axs[-1].set_xlabel('Events')
 	elif 'IEEECIS' in dataset:
 		axs[-1].set_xlabel('Transactions')

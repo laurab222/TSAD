@@ -120,7 +120,7 @@ def bf_search(score, label, start, end=None, step_num=1, display_freq=1, verbose
     return m, m_t
 
 
-def pot_eval(init_score, score, label, path='./plots', name='pot_plot', q=1e-5, level=0.02):
+def pot_eval(init_score, score, label, path='./plots', name='pot_plot', q=1e-5):
     """
     Run POT method on given score.
     Args:
@@ -130,7 +130,6 @@ def pot_eval(init_score, score, label, path='./plots', name='pot_plot', q=1e-5, 
             it should be the anomaly score of test set.
         label:
         q (float): Detection level (risk)
-        level (float): Probability associated with the initial threshold t
     Returns:
         dict: pot result dict
     """
